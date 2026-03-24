@@ -18,7 +18,7 @@ In your `mix.exs`:
 ```elixir
 defp deps do
   [
-    {:raffle_engine, git: "<REPO_URL>", tag: "v0.3.0"}
+    {:raffle_engine, git: "https://github.com/GhostCommitLtd/raffle_engine", tag: "v0.3.0"}
   ]
 end
 ```
