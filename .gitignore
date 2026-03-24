@@ -1,0 +1,16 @@
+# Elixir build artifacts
+/_build/
+/deps/
+/cover/
+
+# Erlang/Elixir crash dumps
+erl_crash.dump
+
+# IDE/tooling
+/.elixir_ls/
+
+# Escript build output
+/raffle_engine
+
+# OS
+.DS_Store
