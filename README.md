@@ -18,7 +18,7 @@ In your `mix.exs`:
 ```elixir
 defp deps do
   [
-    {:raffle_engine, git: "https://github.com/GhostCommitLtd/raffle_engine", tag: "0.3.0"}
+    {:raffle_engine, git: "https://github.com/GhostCommitLtd/raffle_engine", tag: "0.4.0"}
   ]
 end
 ```
@@ -91,13 +91,42 @@ participants = [{"alice", 2}, "bob", {"charlie", 5}]
 participants = ["bob", alice: 2, charlie: 5]
 ```
 
-### Weighted map
+Ordered two-element lists are also accepted:
 
 ```elixir
-participants = %{"alice" => 2, "bob" => 1, "charlie" => 5}
+participants = ["bob", ["alice", 2], ["charlie", 5]]
 ```
 
-All weighted forms are expanded into tickets internally.
+### Ordered weighted objects
+
+Useful when your app receives JSON arrays of objects and wants to preserve entry order:
+
+```elixir
+participants = [
+  "bob",
+  %{"label" => "alice", "count" => 2},
+  %{"label" => "charlie", "count" => 5}
+]
+```
+
+Top-level weighted maps are intentionally not accepted. If your app receives weighted JSON, pass it as an ordered list of arrays or objects instead.
+
+All supported weighted forms are expanded into tickets internally.
+The resulting draw also includes `original_participants` (expanded ticket order) alongside the canonical `participants` list used for hashing and winner selection.
+
+## Upgrading to 0.4.0
+
+`0.4.0` removes support for top-level weighted maps like:
+
+```elixir
+%{"alice" => 2, "bob" => 1}
+```
+
+Use ordered list inputs instead:
+
+```elixir
+[["alice", 2], "bob"]
+```
 
 ## Algorithm versioning
 

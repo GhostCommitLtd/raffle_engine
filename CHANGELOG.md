@@ -2,9 +2,12 @@
 
 This project follows a lightweight changelog format.
 
-## Unreleased
+## 0.4.0
 
-- (add changes here)
+- Removed support for top-level weighted maps; callers should pass ordered list inputs instead.
+- Added `original_participants` to prepared participant output and draw results.
+- Accepted ordered weighted arrays/objects in list inputs, so callers do not need to pre-normalize JSON-style entries.
+- Reject malformed ordered weighted entries instead of silently coercing them into plain labels.
 
 ## 0.3.0
 

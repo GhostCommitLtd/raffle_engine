@@ -44,27 +44,39 @@ defmodule RaffleEngineTest do
     assert RaffleEngine.verify(draw_weighted)
   end
 
-  test "weighted entries via map" do
-    weighted = %{"alice" => 2, "bob" => 1, "charlie" => 5}
-    expanded = ["alice", "alice", "bob"] ++ List.duplicate("charlie", 5)
-    seed = "seed"
+  test "ordered weighted arrays and objects are accepted without caller adaptation" do
+    weighted = ["bob", ["alice", 2], %{"label" => "charlie", "count" => 2}]
 
-    {:ok, draw_weighted} = RaffleEngine.pick_n_winners_safe(weighted, seed, 3)
-    {:ok, draw_expanded} = RaffleEngine.pick_n_winners_safe(expanded, seed, 3)
+    {:ok, draw} = RaffleEngine.pick_n_winners_safe(weighted, "seed", 2)
 
-    assert draw_weighted.winners == draw_expanded.winners
-    assert RaffleEngine.verify(draw_weighted)
+    assert draw.original_participants == ["bob", "alice", "alice", "charlie", "charlie"]
+    assert draw.participants == ["alice", "alice", "bob", "charlie", "charlie"]
+    assert RaffleEngine.verify(draw)
   end
 
   test "prepare_participants_safe returns canonical participants and hash" do
-    input = %{"alice" => 2, "bob" => 1}
+    input = [["alice", 2], "bob"]
 
     {:ok, prepared} = RaffleEngine.prepare_participants_safe(input)
     {:ok, draw} = RaffleEngine.pick_winner_safe(input, "seed")
 
+    assert prepared.original_participants == ["alice", "alice", "bob"]
     assert prepared.participants == draw.participants
     assert prepared.participants_hash == draw.participants_hash
     assert prepared.algorithm_version == draw.algorithm_version
+  end
+
+  test "top-level weighted maps are rejected" do
+    assert {:error, :invalid_participants} =
+             RaffleEngine.pick_winner_safe(%{"alice" => 2, "bob" => 1}, "seed")
+  end
+
+  test "invalid ordered weighted entries return errors instead of becoming labels" do
+    assert {:error, {:invalid_entry_count, "2"}} =
+             RaffleEngine.pick_winner_safe([["alice", "2"], "bob"], "seed")
+
+    assert {:error, {:invalid_entry_count, 0}} =
+             RaffleEngine.pick_winner_safe([%{"label" => "alice", "count" => 0}, "bob"], "seed")
   end
 
   test "v1.0.1 trims and removes empty entries" do

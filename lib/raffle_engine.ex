@@ -5,7 +5,7 @@ defmodule RaffleEngine do
   @supported_algorithm_versions ["1.0.0", "1.0.1", @current_algorithm_version]
 
   @type participant :: String.t()
-  @type participants_input :: list() | map()
+  @type participants_input :: list()
   @type seed :: String.t() | integer()
   @type error_reason ::
           :missing_seed
@@ -18,6 +18,7 @@ defmodule RaffleEngine do
 
   @spec prepare_participants(participants_input(), keyword()) ::
           %{
+            original_participants: [String.t()],
             participants: [String.t()],
             participants_hash: String.t(),
             algorithm_version: String.t()
@@ -35,6 +36,7 @@ defmodule RaffleEngine do
   @spec prepare_participants_safe(participants_input(), keyword()) ::
           {:ok,
            %{
+             original_participants: [String.t()],
              participants: [String.t()],
              participants_hash: String.t(),
              algorithm_version: String.t()
@@ -45,10 +47,12 @@ defmodule RaffleEngine do
 
     with :ok <- validate_algorithm_version(algorithm_version),
          {:ok, expanded_participants} <- expand_participants_input(participants),
+         {:ok, original_participants} <- normalize_original_participants(expanded_participants),
          {:ok, canonical_participants} <-
            canonicalize_participants(expanded_participants, algorithm_version) do
       {:ok,
        %{
+         original_participants: original_participants,
          participants: canonical_participants,
          participants_hash: participants_hash(canonical_participants, algorithm_version),
          algorithm_version: algorithm_version
@@ -84,6 +88,7 @@ defmodule RaffleEngine do
     with :ok <- validate_algorithm_version(algorithm_version),
          {:ok, normalized_seed} <- normalize_seed(seed),
          {:ok, expanded_participants} <- expand_participants_input(participants),
+         {:ok, original_participants} <- normalize_original_participants(expanded_participants),
          {:ok, canonical_participants} <-
            canonicalize_participants(expanded_participants, algorithm_version),
          :ok <- validate_winner_count(n, canonical_participants) do
@@ -94,6 +99,7 @@ defmodule RaffleEngine do
 
       {:ok,
        %Draw{
+         original_participants: original_participants,
          participants: canonical_participants,
          participants_hash: participants_hash,
          seed: seed,
@@ -163,18 +169,11 @@ defmodule RaffleEngine do
   defp expand_participants_input(participants) when is_list(participants) do
     expanded =
       Enum.reduce_while(participants, [], fn
-        {key, count}, acc when is_integer(count) ->
-          case normalize_count(count) do
-            {:ok, count} ->
-              entries = List.duplicate(to_string(key), count)
-              {:cont, [entries | acc]}
-
-            {:error, reason} ->
-              {:halt, {:error, reason}}
-          end
-
         entry, acc ->
-          {:cont, [to_string(entry) | acc]}
+          case expand_ordered_entry(entry) do
+            {:ok, entries} -> {:cont, [entries | acc]}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
       end)
 
     case expanded do
@@ -192,38 +191,90 @@ defmodule RaffleEngine do
     end
   end
 
-  defp expand_participants_input(participants) when is_map(participants) do
-    expanded =
-      Enum.reduce_while(participants, [], fn {key, count}, acc ->
-        case normalize_count(count) do
-          {:ok, count} ->
-            entries = List.duplicate(to_string(key), count)
-            {:cont, [entries | acc]}
-
-          {:error, reason} ->
-            {:halt, {:error, reason}}
-        end
-      end)
-
-    case expanded do
-      {:error, _} = error ->
-        error
-
-      list when is_list(list) ->
-        expanded = list |> List.flatten() |> Enum.reverse()
-
-        if expanded == [] do
-          {:error, :missing_participants}
-        else
-          {:ok, expanded}
-        end
-    end
-  end
+  defp expand_participants_input(participants) when is_map(participants),
+    do: {:error, :invalid_participants}
 
   defp expand_participants_input(_), do: {:error, :invalid_participants}
 
+  defp expand_ordered_entry({key, count}) do
+    with {:ok, count} <- normalize_count(count) do
+      {:ok, List.duplicate(to_string(key), count)}
+    end
+  end
+
+  defp expand_ordered_entry([label, count] = entry) do
+    if List.ascii_printable?(entry) do
+      {:ok, [to_string(entry)]}
+    else
+      with {:ok, count} <- normalize_count(count) do
+        {:ok, List.duplicate(to_string(label), count)}
+      end
+    end
+  end
+
+  defp expand_ordered_entry(entry) when is_list(entry), do: {:error, :invalid_participants}
+
+  defp expand_ordered_entry(%{} = entry) do
+    with {:ok, label} <- fetch_weighted_label(entry),
+         {:ok, count} <- fetch_weighted_count(entry) do
+      {:ok, List.duplicate(label, count)}
+    else
+      :error -> {:error, :invalid_participants}
+      {:error, _} = error -> error
+    end
+  end
+
+  defp expand_ordered_entry(entry), do: {:ok, [to_string(entry)]}
+
   defp normalize_count(count) when is_integer(count) and count > 0, do: {:ok, count}
   defp normalize_count(count), do: {:error, {:invalid_entry_count, count}}
+
+  defp normalize_original_participants(participants) when is_list(participants) do
+    original_participants =
+      participants
+      |> Enum.map(fn participant ->
+        participant
+        |> to_string()
+        |> String.trim()
+      end)
+      |> Enum.reject(&(&1 == ""))
+
+    if original_participants == [] do
+      {:error, :missing_participants}
+    else
+      {:ok, original_participants}
+    end
+  end
+
+  defp fetch_weighted_label(entry) when is_map(entry) do
+    case Map.fetch(entry, "label") do
+      {:ok, value} -> {:ok, to_string(value)}
+      :error -> fetch_atom_key(entry, :label)
+    end
+  end
+
+  defp fetch_weighted_count(entry) when is_map(entry) do
+    case Map.fetch(entry, "count") do
+      {:ok, value} -> normalize_count(value)
+      :error -> fetch_atom_count(entry)
+    end
+  end
+
+  defp fetch_atom_key(entry, key) do
+    if Map.has_key?(entry, key) do
+      {:ok, entry |> Map.fetch!(key) |> to_string()}
+    else
+      :error
+    end
+  end
+
+  defp fetch_atom_count(entry) do
+    if Map.has_key?(entry, :count) do
+      entry |> Map.fetch!(:count) |> normalize_count()
+    else
+      :error
+    end
+  end
 
   defp canonicalize_participants(participants, "1.0.0") when is_list(participants) do
     canonical = participants |> Enum.map(&to_string/1) |> Enum.sort()

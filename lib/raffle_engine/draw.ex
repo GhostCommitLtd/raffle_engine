@@ -1,5 +1,6 @@
 defmodule RaffleEngine.Draw do
   @enforce_keys [
+    :original_participants,
     :participants,
     :participants_hash,
     :seed,
@@ -10,6 +11,7 @@ defmodule RaffleEngine.Draw do
   ]
 
   @type t :: %__MODULE__{
+          original_participants: [String.t()],
           participants: [String.t()],
           participants_hash: String.t(),
           seed: term(),
